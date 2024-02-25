@@ -1,52 +1,48 @@
 #!/bin/bash
 
-# Файл, откуда берутся номер и текст сообщения
+# Путь к файлу с номерами и сообщениями
 SMS_FILE="sms.txt"
 
-# Файл для логирования
+# Путь к JSON файлу лога
 LOG_FILE="sms_log.json"
+
+# Путь к устройству GSM модуля
+COM_PORT="/dev/ttyUSB0"
 
 # Функция отправки SMS
 send_sms() {
     local number=$1
     local message=$2
 
-    # Здесь должна быть команда или вызов программы для отправки SMS например: gammu sendsms TEXT "$number" -text "$message"
-    echo "Отправка SMS на номер $number с текстом: $message"
+    # Подготовка и отправка сообщения через GSM модуль
+    echo "AT+CMGF=1" > $COM_PORT
+    echo "AT+CSCS=\"GSM\"" > $COM_PORT
+    echo "AT+CMGS=\"$number\"" > $COM_PORT
+    echo -e "$message\x1A" > $COM_PORT
+
+    # Логирование отправки сообщения
+    local datetime=$(date --iso-8601=seconds)
+    echo "{\"date\":\"$datetime\",\"number\":\"$number\",\"message\":$(jq -aRs . <<< "$message")}," >> $LOG_FILE
 }
 
-# Функция записи лога в формат JSON
-log_to_json() {
-    local number=$1
-    local message=$2
-    local timestamp=$(date -I'seconds')
-
-    # Добавляем запятую, если файл лога не пустой
-    [ -s "$LOG_FILE" ] && echo "," >> "$LOG_FILE"
-
-    # Добавляем запись в лог
-    echo "{\"date\":\"$timestamp\",\"number\":\"$number\",\"message\":\"$message\"}" >> "$LOG_FILE"
-}
-
-# Проверяем наличие файла с номерами и сообщениями
+# Проверка наличия файла с SMS
 if [ ! -f "$SMS_FILE" ]; then
     echo "Файл с SMS ($SMS_FILE) не найден."
     exit 1
 fi
 
-# Создаем или очищаем файл лога
-echo "[" > "$LOG_FILE"
+# Создание или очистка файла лога
+echo "[" > $LOG_FILE
 
-# Читаем номера и сообщения из файла
+# Чтение SMS из файла и их отправка
 while IFS=';' read -r number message
 do
     send_sms "$number" "$message"
-    log_to_json "$number" "$message"
 done < "$SMS_FILE"
 
-# Закрываем массив в JSON
-echo "]" >> "$LOG_FILE"
+# Удаление последней запятой и закрытие JSON массива
+sed -i '$ s/,$//' $LOG_FILE
+echo "]" >> $LOG_FILE
 
-# Выводим сообщение о завершении работы скрипта
-echo "SMS отправлены и лог обновлен."
+echo "Все SMS отправлены и лог обновлен."
 
