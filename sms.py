@@ -1,56 +1,83 @@
-import serial
-import json
-from datetime import datetime
+import machine
+import time
 
-# Путь к файлу с номерами и сообщениями
-SMS_FILE = "sms.txt"
+# Настройка UART для связи с SIM800L
+uart = machine.UART(1, baudrate=9600, tx=Pin(4), rx=Pin(5))
 
-# Путь к JSON файлу лога
-LOG_FILE = "sms_log.json"
+SMS_FILE = "sms.txt"  # Путь к файлу со списком SMS
+LOG_FILE = "sms_log.json"  # Путь к файлу лога
 
-# Путь к устройству GSM модуля
-COM_PORT = "/dev/ttyUSB0"
 
-# Скорость порта
-BAUD_RATE = 9600
+def send_at_command(command, delay=2, return_response=False):
+    """
+    Отправляет AT-команду модулю SIM800L и возвращает ответ.
+    """
+    uart.write((command + '\r\n').encode())
+    time.sleep(delay)
+    response = uart.read()
+    if response:
+        print(response.decode())  # Вывод ответа для отладки
+        if return_response:
+            return response.decode()
+    else:
+        print("No response")
+        if return_response:
+            return ""
 
-# Функция отправки SMS
+
+def check_sim_card():
+    """
+    Проверяет наличие SIM-карты в модуле SIM800L.
+    """
+    response = send_at_command('AT+CPIN?', 2, True)
+    if "+CPIN: NOT INSERTED" in response:
+        print("SIM-карта не обнаружена.")
+        return False
+    elif "+CPIN: READY" in response:
+        print("SIM-карта готова к работе.")
+        return True
+    else:
+        print("Не удалось проверить статус SIM-карты.")
+        return False
+
+
 def send_sms(number, message):
-    with serial.Serial(COM_PORT, BAUD_RATE, timeout=1) as ser:
-        ser.write(b'AT+CMGF=1\r')
-        ser.write(b'AT+CSCS="GSM"\r')
-        ser.write(bytes('AT+CMGS="{}"\r'.format(number), 'utf-8'))
-        ser.write(bytes('{}\x1A'.format(message), 'utf-8'))
+    """
+    Отправляет SMS-сообщение на указанный номер.
+    """
+    print(f"Отправка SMS на номер {number} с текстом: {message}")
+    send_at_command('AT+CMGF=1')  # Текстовый режим
+    send_at_command(f'AT+CMGS="{number}"', delay=1, return_response=False)
+    response = send_at_command(message + chr(26), delay=5, return_response=True)
+    if "OK" in response:
+        print("SMS успешно отправлено.")
+    else:
+        print("Ошибка при отправке SMS.")
 
-        # Логирование отправки сообщения
-        datetime_now = datetime.now().isoformat()
-        log_entry = {"date": datetime_now, "number": number, "message": message}
-        with open(LOG_FILE, "a") as log_file:
-            json.dump(log_entry, log_file)
-            log_file.write(",\n")
 
-# Проверка наличия файла с SMS и создание или очистка файла лога
 if __name__ == "__main__":
+    if not check_sim_card():
+        exit(1)
+
     try:
         with open(SMS_FILE, "r") as file:
             sms_list = file.readlines()
-    except FileNotFoundError:
+    except OSError:
         print(f"Файл с SMS ({SMS_FILE}) не найден.")
         exit(1)
-    
+
     with open(LOG_FILE, "w") as log_file:
         log_file.write("[\n")
-    
+
     for sms in sms_list:
         number, message = sms.strip().split(';')
         send_sms(number, message)
-    
-    # Удаление последней запятой и закрытие JSON массива
+
     with open(LOG_FILE, "rb+") as log_file:
-        log_file.seek(-2, 2)  # Перемещаемся на два байта назад от конца файла
-        log_file.truncate()  # Удаляем последние два байта (запятую и перевод строки)
+        log_file.seek(-2, 2)  # Удаляем последние два байта (запятая и перенос строки)
+        log_file.truncate()
+
     with open(LOG_FILE, "a") as log_file:
         log_file.write("\n]")
-    
-    print("Все SMS отправлены и лог обновлен.")
 
+    print("Все SMS отправлены и лог обновлен.")

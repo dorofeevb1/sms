@@ -1,0 +1,3 @@
+micropython-umqtt.simple
+micropython-urequests
+machine
