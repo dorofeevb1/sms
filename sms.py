@@ -1,12 +1,13 @@
 import machine
 import time
+from machine import Pin
 
 # Настройка UART для связи с SIM800L
-uart = machine.UART(1, baudrate=9600, tx=Pin(4), rx=Pin(5))
+uart = machine.UART(0, baudrate=2400)
+# Создание файла sms.txt и запись в него текста
 
 SMS_FILE = "sms.txt"  # Путь к файлу со списком SMS
 LOG_FILE = "sms_log.json"  # Путь к файлу лога
-
 
 def send_at_command(command, delay=2, return_response=False):
     """
@@ -29,6 +30,7 @@ def check_sim_card():
     """
     Проверяет наличие SIM-карты в модуле SIM800L.
     """
+
     response = send_at_command('AT+CPIN?', 2, True)
     if "+CPIN: NOT INSERTED" in response:
         print("SIM-карта не обнаружена.")
@@ -51,6 +53,7 @@ def send_sms(number, message):
     response = send_at_command(message + chr(26), delay=5, return_response=True)
     if "OK" in response:
         print("SMS успешно отправлено.")
+
     else:
         print("Ошибка при отправке SMS.")
 
@@ -73,11 +76,11 @@ if __name__ == "__main__":
         number, message = sms.strip().split(';')
         send_sms(number, message)
 
-    with open(LOG_FILE, "rb+") as log_file:
-        log_file.seek(-2, 2)  # Удаляем последние два байта (запятая и перенос строки)
-        log_file.truncate()
+    with open(LOG_FILE, "r") as log_file:
+         content = log_file.read()
+    modified = content[:-2]+"\n]"
 
     with open(LOG_FILE, "a") as log_file:
-        log_file.write("\n]")
+         log_file.write(modified)
 
     print("Все SMS отправлены и лог обновлен.")
