@@ -1,72 +1,109 @@
 import machine
 import time
-from machine import Pin
 
-# Настройка UART для связи с SIM800L
-uart = machine.UART(0, baudrate=2400)
-# Создание файла sms.txt и запись в него текста
+#  UART    SIM800L
+uart = machine.UART(0, baudrate=9600)
 
-SMS_FILE = "sms.txt"  # Путь к файлу со списком SMS
-LOG_FILE = "sms_log.json"  # Путь к файлу лога
+SMS_FILE = "sms.txt"  
+LOG_FILE = "sms_log.json" 
 
 def send_at_command(command, delay=2, return_response=False):
     """
-    Отправляет AT-команду модулю SIM800L и возвращает ответ.
+     AT-  SIM800L   .
     """
     uart.write((command + '\r\n').encode())
     time.sleep(delay)
-    response = uart.read()
-    if response:
-        print(response.decode())  # Вывод ответа для отладки
+    if uart.any():
+        response = uart.read().decode()
+        print(response)  #    
         if return_response:
-            return response.decode()
+            return response
     else:
         print("No response")
         if return_response:
             return ""
 
-
 def check_sim_card():
     """
-    Проверяет наличие SIM-карты в модуле SIM800L.
+      SIM-   SIM800L.
     """
-
     response = send_at_command('AT+CPIN?', 2, True)
     if "+CPIN: NOT INSERTED" in response:
-        print("SIM-карта не обнаружена.")
+        print("SIM-  .")
         return False
     elif "+CPIN: READY" in response:
-        print("SIM-карта готова к работе.")
+        print("SIM-   .")
         return True
     else:
-        print("Не удалось проверить статус SIM-карты.")
+        print("    SIM-.")
         return False
 
+def enable_sms_receive():
+    """
+         SMS.
+    """
+    send_at_command('AT+CMGF=1')  
+    send_at_command('AT+CSCS="GSM"')
+    send_at_command('AT+CNMI=2,2,0,0,0') 
 
 def send_sms(number, message):
     """
-    Отправляет SMS-сообщение на указанный номер.
+     SMS-   .
     """
-    print(f"Отправка SMS на номер {number} с текстом: {message}")
-    send_at_command('AT+CMGF=1')  # Текстовый режим
+    print(f" SMS   {number}  : {message}")
+    send_at_command('AT+CMGF=1')  
+    send_at_command('AT+CSCS="GSM"')
     send_at_command(f'AT+CMGS="{number}"', delay=1, return_response=False)
     response = send_at_command(message + chr(26), delay=5, return_response=True)
     if "OK" in response:
-        print("SMS успешно отправлено.")
-
+        print("SMS  .")
     else:
-        print("Ошибка при отправке SMS.")
+        print("   SMS.")
+def read_sms(index):
+    """
+     SMS       .
+    """
+    response = send_at_command(f'AT+CMGR={index}', 3, True)
+    if "+CMGR:" in response:
+        print(response)
+    else:
+        print("     .")
 
+def list_all_sms():
+    """
+        SMS.
+    """
+    print("    SMS...")
+    response = send_at_command('AT+CMGL="ALL"', 5, True)
+    if "+CMGL:" in response:
+        print(response)
+    else:
+        print("     .")
 
-if __name__ == "__main__":
+def main():
     if not check_sim_card():
         exit(1)
 
+    enable_sms_receive()
+
+    #   SMS    
+    print("  SMS...")
+    msg_id = wait_for_msg(250)  # 250  
+    if msg_id is not None:
+        print(f"    ID: {msg_id}")
+        #   
+        read_sms(msg_id)
+    else:
+        print("  .   .")
+        #    
+        list_all_sms()
+
+    #  SMS     
     try:
         with open(SMS_FILE, "r") as file:
             sms_list = file.readlines()
     except OSError:
-        print(f"Файл с SMS ({SMS_FILE}) не найден.")
+        print(f"  SMS ({SMS_FILE})  .")
         exit(1)
 
     with open(LOG_FILE, "w") as log_file:
@@ -75,12 +112,13 @@ if __name__ == "__main__":
     for sms in sms_list:
         number, message = sms.strip().split(';')
         send_sms(number, message)
+        #      LOG_FILE    SMS
 
-    with open(LOG_FILE, "r") as log_file:
-         content = log_file.read()
-    modified = content[:-2]+"\n]"
-
+    #  JSON   LOG_FILE
     with open(LOG_FILE, "a") as log_file:
-         log_file.write(modified)
+        log_file.write("\n]")
 
-    print("Все SMS отправлены и лог обновлен.")
+    print(" SMS    .")
+
+if __name__ == "__main__":
+    main()
